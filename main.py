@@ -1,14 +1,19 @@
 import os
 from fastapi import FastAPI, Request, HTTPException, Response
 from groq import Groq
+from supabase import create_client, Client
 
 app = FastAPI()
 
-# Environment variable se key uthayega (yahan key mat likhna)
+# Secure environment variables
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "my_secret_123")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
 
+# Clients Initialization
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 @app.get("/")
 def home():
@@ -36,6 +41,7 @@ async def receive_message(request: Request):
         user_message = messaging.get("message", {}).get("text")
 
         if user_message and groq_client:
+            # Generate AI Reply
             chat_completion = groq_client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": "You are a helpful Instagram sales assistant converting leads naturally."},
@@ -44,7 +50,14 @@ async def receive_message(request: Request):
                 model="llama-3.3-70b-versatile",
             )
             ai_reply = chat_completion.choices[0].message.content
-            print(f"AI Response for {sender_id}: {ai_reply}")
+            
+            # Save to Supabase
+            if supabase:
+                supabase.table("leads").insert({
+                    "instagram_id": sender_id,
+                    "user_message": user_message,
+                    "ai_response": ai_reply
+                }).execute()
 
     except Exception as e:
         print(f"Error processing webhook: {e}")
